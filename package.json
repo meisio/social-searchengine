@@ -1,0 +1,22 @@
+{
+  "name": "social-searchengine",
+  "version": "0.0.1",
+  "description": "Search Engine based on Social Network(s)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "~4.9.x",
+    "mongoskin": "~1.4.4",
+    "twit" : "~1.1.20"
+  },
+  "engines": {
+    "node": "0.10.x"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/meisio/social-searchengine"
+  },
+  "license": "GPL2"
+}
