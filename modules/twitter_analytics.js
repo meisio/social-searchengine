@@ -13,216 +13,203 @@ var db = mongo.db(settings.getMongoHost(), {native_parser: true});
 // bind status collection to store the raw 'tweets'
 db.bind('status');
 
-// create new collection
+// bind collection
 db.bind('tweets');
 db.bind('users');
 
+// create index
+db.tweets.ensureIndex({id:1},function(){});
+db.users.ensureIndex({id:1},function(){});
+
 // drop user db
 db.users.drop(function(){});
+db.tweets.drop(function(){});
 
-// data strucutre for bulk insert
-var bulk = {
-	users: [],
-	user_counter: 0,
-	tweets: [],
-	tweet_counter: 0,
-	max: 100
-};
+var user_cache = {};
 
-// get cursor to the first object
-var cursor = db.status.find({});
-// iterate
-cursor.nextObject(function(err, status) {
-	
-	function inner(status){
-		var tweet,
-			tweet_user,
-			retweet,
-			retweet_user;
+var col_users  = null;
+var col_tweets = null;
 
-		if(status.retweeted_status){
-			// retweet
-			retweet = status;
-			retweet_user = status.user;
-			// tweet
-			tweet = status.retweeted_status;
-			tweet_user = status.retweeted_status.user;
+var bulk_users;
+var bulk_tweets;
 
-			// remove pointers
-			retweet.retweeted_status = null;
-			retweet.user = retweet_user.id_str;
-		} else {
-			// tweet
-			tweet = status;
-			tweet_user = status.user;
-		}
+var bulk_users_cnt  = 0;
+var bulk_tweets_cnt = 0;
+ 
+var bulk_max = 256;
 
-		// remove tweet pointer
-		tweet.user = tweet_user.id_str;
-
-		insertUser(tweet_user,tweet.created_at,function(){
-			insertUser(retweet_user,tweet.created_at,function(){
-				cursor.nextObject(function(err, status) {
-					inner(status);
-				});
-			});
-		});
-		
-	}
-
-	inner(status);
-
+// get collections for users
+db.collection('users',function(err,collection) {
+	col_users = collection;
+	bulk_users = col_users.initializeUnorderedBulkOp();
+	start();
 });
 
+// get collections for tweets
+db.collection('tweets',function(err,collection) {
+	col_tweets = collection;
+	bulk_tweets = col_tweets.initializeUnorderedBulkOp();
+	start();
+});
 
-function toTimeSeries(timestamp,obj,key){
-	var value = obj[key];
-	obj[key] = {};
-	obj[key][timestamp] = value;
-	return value;
-}
+function start(){
+	if(col_users && col_tweets){
+		// get cursor to the first object
+		var cursor = db.status.find({});
 
-function toStringObj(k1,k2){
-	return k1 + '.' + k2;
+		// iterate over cursor
+		cursor.nextObject(function(err, status) {
+			function inner(status){
+				if(status === null){
+					// finish. push last elements
+					if ( bulk_users_cnt % bulk_max !== 0 ){
+				        bulk_users.execute(function(err,result) {});
+				    }
+
+				    if ( bulk_tweets_cnt % bulk_max !== 0 ){
+				        bulk_tweets.execute(function(err,result) {});
+				    }
+
+					return;
+				}
+				var tweet, tweet_user, retweet, retweet_user;
+
+				if(status.retweeted_status){
+					// retweet
+					retweet = status;
+					retweet_user = status.user;
+					// tweet
+					tweet = status.retweeted_status;
+					tweet_user = status.retweeted_status.user;
+
+					setTwitterId(retweet);
+					setTwitterId(retweet_user);
+
+					// remove pointers
+					retweet.retweeted_status = null;
+					retweet.user = retweet_user.id;
+				} else {
+					// tweet
+					tweet = status;
+					tweet_user = status.user;
+				}
+
+
+				// clean twitter id
+				setTwitterId(tweet);
+				setTwitterId(tweet_user);
+				// remove tweet pointer
+				tweet.user = tweet_user.id;
+
+				// insert. I don't like this nested calls. Does somebody has a better idea?
+				insertTweet(tweet,function(){
+					insertUser(tweet_user,tweet.created_at,function(){
+						if(retweet){
+							// currently we are not interested in retweets just for the user.
+							insertUser(retweet_user,retweet.created_at,function(){
+								cursor.nextObject(function(err, status){
+									inner(status);
+								});
+							});					
+						} else {
+							cursor.nextObject(function(err, status){
+								inner(status);
+							});
+						}
+
+					});
+				});
+								
+			}
+
+			inner(status);
+		});
+	}
 }
 
 /**
  * This method inserts a new user or if the user exits it updates the users properties such as friends_count.
  */
 function insertUser(user,timestamp,cb){
-	if( user === undefined || user === null || cb === undefined ){
+	if( user === undefined || user === null ){
 		return cb();
 	}
 
 	// clean
 	cleanEmptyEntities(user);
-	// clean
-	cleanEntities(user,user_entities_to_remove);
-	// extract permanent entities
-	var timed_entities = cleanEntities(user,user_entities_permanent,true);
-	timed_entities.timestamp = timestamp;
-	user.timed = [];
-	user.timed.push(timed_entities);
 
-	// currently we store a timestamp series in our documents.
-	// TODO: Store only diff
-	db.users.findOne({'id_str':user.id_str},function(err,db_user){
-		if(err){
+	bulk_users.find({'id':user.id}).upsert().updateOne(user);
+	bulk_users_cnt++;
 
-		} else {
-			if(!db_user){
-				// empty insert
-				db.users.insert(user,function(err){
-					if(err){
-					} else {
-					}
-				});
-			} else {
-				var timestamp_exists = false;
-				for(var i=0; i<db_user.timed.length; i++){
-					if( db_user.timed[i].timestamp === timed_entities.timestamp ){
-						timestamp_exists = true;
-						break;
-					}
-				}
+	if ( bulk_users_cnt % bulk_max === 0 ){
+        bulk_users.execute(function(err,result) {
+        	if(err){
+        		console.log(err);
+        	}
 
-				if(!timestamp_exists){
-					db.users.update(
-						{ 'id_str':user.id_str },
-						{ '$push':{
-							timed: timed_entities
-						  }
-						},
-						{upsert:true},
-						function(err){
-
-						}
-					);
-				}
-			}
-		}
-
-		cb();
-	});
+	        bulk_users = col_users.initializeUnorderedBulkOp(); // reset after execute
+	        cb();
+        });
+    } else {
+    	cb();
+    }
 
 }
 
 /**
  * This method inserts a new tweet or if the tweet exits it updates the tweet properties such as retweet_count.
  */
-function insertTweet(tweet){
-	if( tweet === undefined ){
+function insertTweet(tweet,cb){
+	if( tweet === undefined  || tweet === null ){
 		return;
 	}
-}
 
-/**
- * HELPER 
- * STUFF
- */
+	// clean
+	cleanEmptyEntities(tweet);
 
-var user_entities_permanent = ['id_str','screen_name','created_at','utc_offset','time_zone'];
-var user_entities_to_remove = ['id','following','follow_request_sent','notifications'];
+	// tweets can also be updated. e.g. if the retweet counter inc/dec. 
+	bulk_tweets.find({'id':tweet.id}).upsert().updateOne(tweet);
+	bulk_tweets_cnt++;
 
-function contains(arr,key){
-	for(var i=0; i<arr.length; i++){
-		if(arr[i] === key){
-			return true;
-		}
-	}	
-	return false;
-}
+	if ( bulk_tweets_cnt % bulk_max === 0 ){
+        bulk_tweets.execute(function(err,result) {
+        	if(err){
+        		console.log(err);
+        	}
 
-function cleanEntities(object,entities,other){
-	var o = {};
-	if(other){
-		for(var entity in object){
-			if(!contains(entities,entity)){
-				o[entity] = object[entity];
-				delete object[entity];
-			}
-		}
-	} else {
-		for(var i=0; i< entities.length; i++){
-			var entity = entities[i];
+	        bulk_tweets = col_tweets.initializeUnorderedBulkOp(); // reset after execute
+	        cb();
+        });
+    } else {
+    	cb();
+    }
 
-			if(object[entity]){
-				o[entity] = object[entity];
-				delete object[entity];
-			}
-		}
-	}
-	return o;
-}
-
-function diffEntities(o1,o2){
-	var o = {};
-	
-	for(var entity in o2){
-		if(entity === 'timestamp'){
-			continue;
-		}
-
-		if(o1[entity] !== o2[entity]){
-			o[entity] = o2[entity];
-		}
-	}
-
-	return o;
-}
-
-function size_of_o(obj){
-	var c = 0;
-	for(var e in obj){
-		c++;
-	}
-	return c;
 }
 
 function cleanEmptyEntities(obj){
 	for(var e in obj){
-		if(obj[e] === undefined || obj[e] === null || obj[e] === '' || isNaN(obj[e])){
+		if(obj[e] === undefined || obj[e] === null || obj[e] === ''){
 			delete obj[e];
 		}
 	}
 }
+
+function setTwitterId(object){
+	// TODO: nodejs or mongo driver converts a long to double.
+	object.id = object.id_str
+	delete object.id_str;
+}
+
+
+
+
+process.on('message',function(type,obj){
+	if(type === 'tweet'){
+		insertTweet(obj);
+	} else if(type === 'retweet'){
+		// retweets currently not important
+	} else if(type === 'user'){
+		insertUser(user);
+	}
+});
+
