@@ -1,9 +1,11 @@
 // thrid parties modules
 var mongo 	= require('mongoskin');
 var twit 	= require('twit');
+var cp		= require('child_process');
 
 // local modules
-var settings = require('./settings.js');
+var settings 			= require('./settings.js');
+var twitter_persistence	= cp.fork('./modules/twitter_persistence.js');
 
 // create an instance of twit
 var T = new twit(settings.getTwitterAuth());
@@ -21,37 +23,76 @@ var stream = T.stream('statuses/filter',{
 	track: ['RT']
 });
 
-// some data structure for bulk insert
-var statuses = [];
-var counter  = 0;
-var max_ops	 = 100;
+// split twitter data
+function handleStatus(status){
+	var tweet, tweet_user, retweet, retweet_user;
+
+	// check if it is a tweet or retweet
+	if(status.retweeted_status){
+		// retweet
+		retweet = status;
+		retweet_user = status.user;
+		// tweet
+		tweet = status.retweeted_status;
+		tweet_user = status.retweeted_status.user;
+		// clean twitter id
+		setTwitterId(retweet);
+		setTwitterId(retweet_user);
+		// clean twitter id
+		setTwitterId(tweet);
+		// remove pointers
+		retweet.retweeted_status = tweet.id;
+		retweet.user = retweet_user.id;
+		// clean empty fields
+		cleanEmptyFields(retweet);
+		cleanEmptyFields(retweet_user);
+	} else {
+		// tweet
+		tweet = status;
+		tweet_user = status.user;
+		// clean twitter id
+		setTwitterId(tweet);
+	}
+
+	setTwitterId(tweet_user);
+	
+	// remove tweet pointer
+	tweet.user = tweet_user.id;
+
+	// clean empty fields
+	cleanEmptyFields(tweet);
+	cleanEmptyFields(tweet_user);
+
+	return {
+		tweet: tweet,
+		tweet_user: tweet_user,
+		retweet: retweet,
+		retweet_user: retweet_user
+	};
+}
+
+// helper function to set id
+function setTwitterId(object){
+	// TODO: nodejs or mongo driver converts a long to double.
+	object.id = object.id_str
+	delete object.id_str;
+}
+
+// helper function to clean empty fields
+function cleanEmptyFields(obj){
+	for(var e in obj){
+		if(obj[e] === undefined || obj[e] === null || obj[e] === ''){
+			delete obj[e];
+		}
+	}
+}
 
 process.on('message',function(msg){
 	// check which message we recieved either to start or to stop the crawler
 	if(msg == 'start'){
 		stream.on('tweet',function(status){
-			statuses.push(status);
-			counter++;
-
-			// insert if we rechead max_ops
-			if(counter % max_ops == 0){
-				// get the n elements
-				var s = statuses.slice(0,counter);
-				// remove the first n elements from array
-				statuses.splice(0,counter);
-
-				// bulk insert
-				db.status.insert(s,function(err){
-					if(err){
-						console.log("Failed to bulk insert status");
-					}
-					s = null;
-				});
-
-				// just to be sure if async processes overlapps
-				counter  = statuses.length;
-			}
-
+			var object = handleStatus(status);
+			twitter_persistence.send(object);
 		});
 	} else if(msg == 'end'){
 		// TODO: stop
