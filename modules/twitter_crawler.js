@@ -44,8 +44,8 @@ function handleStatus(status){
 		retweet.retweeted_status = tweet.id;
 		retweet.user = retweet_user.id;
 		// clean empty fields
-		cleanEmptyFields(retweet);
-		cleanEmptyFields(retweet_user);
+		cleanFields(retweet);
+		cleanFields(retweet_user);
 	} else {
 		// tweet
 		tweet = status;
@@ -60,8 +60,8 @@ function handleStatus(status){
 	tweet.user = tweet_user.id;
 
 	// clean empty fields
-	cleanEmptyFields(tweet);
-	cleanEmptyFields(tweet_user);
+	cleanFields(tweet);
+	cleanFields(tweet_user);
 
 	return {
 		tweet: tweet,
@@ -79,10 +79,12 @@ function setTwitterId(object){
 }
 
 // helper function to clean empty fields
-function cleanEmptyFields(obj){
+function cleanFields(obj){
 	for(var e in obj){
 		if(obj[e] === undefined || obj[e] === null || obj[e] === ''){
 			delete obj[e];
+		} else if (typeof obj[e] == 'string' || obj[e] instanceof String){
+			obj[e] = obj[e].toLowerCase();
 		}
 	}
 }

@@ -13,7 +13,9 @@ twitter_crawler.on('message',function(msg){
 
 // restart twitter analysis if the child process terminates
 twitter_analysis.on('message',function(msg){
-	twitter_analysis.send('start');
+	setTimeout(function(){
+		twitter_analysis.send('start');
+	},1000);
 });
 
 // start the instance
