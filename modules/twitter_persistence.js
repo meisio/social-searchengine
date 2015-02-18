@@ -4,8 +4,11 @@
 
 // third partie modules
 var mongo 	= require('mongoskin');
+var cp		= require('child_process');
+
 // local modules
 var settings = require('./settings.js');
+
 // create an instance to mongo
 var db = mongo.db(settings.getMongoHost(), {native_parser: true});
 // max inserts
@@ -27,7 +30,6 @@ var bulk_retweets_cnt = 0;
 // get collections for users
 db.collection('users',function(err,collection) {
 	col_users = collection;
-	col_users.drop(function(){});
 	col_users.ensureIndex({id:1},function(){});
 	bulk_users = col_users.initializeUnorderedBulkOp();
 });
@@ -35,7 +37,6 @@ db.collection('users',function(err,collection) {
 // get collections for tweets
 db.collection('tweets',function(err,collection) {
 	col_tweets = collection;
-	col_tweets.drop(function(){});
 	col_tweets.ensureIndex({id:1},function(){});
 	bulk_tweets = col_tweets.initializeUnorderedBulkOp();
 });
@@ -43,7 +44,6 @@ db.collection('tweets',function(err,collection) {
 // get collections for retweets
 db.collection('retweets',function(err,collection) {
 	col_retweets = collection;
-	col_retweets.drop(function(){});
 	col_retweets.ensureIndex({id:1},function(){});
 	bulk_retweets = col_retweets.initializeUnorderedBulkOp();
 });
@@ -113,7 +113,7 @@ process.on('message',function(object){
 	insertTweet(object.tweet,function(){});
 	insertUser(object.tweet_user,function(){});
 	if(object.retweet){
-		insertRetweet(object.retweet,function(){});
+		//insertRetweet(object.retweet,function(){});
 		insertUser(object.retweet_user,function(){});
 	}
 });
