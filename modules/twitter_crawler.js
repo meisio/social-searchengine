@@ -1,4 +1,4 @@
-// thrid parties modules
+// thrid party modules
 var mongo 	= require('mongoskin');
 var twit 	= require('twit');
 var cp		= require('child_process');

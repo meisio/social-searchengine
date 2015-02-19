@@ -2,7 +2,7 @@
  * This module transforms the twitter data which we can handle better.
  */ 
 
-// third partie modules
+// third party modules
 var mongo 	= require('mongoskin');
 var cp		= require('child_process');
 

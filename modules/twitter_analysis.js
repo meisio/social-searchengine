@@ -5,7 +5,7 @@
  */
 
 
-// third partie modules
+// third party modules
 var mongo 	= require('mongoskin');
 
 // local modules
@@ -16,7 +16,18 @@ var db = mongo.db(settings.getMongoHost(), {native_parser: true});
 db.bind('users');
 db.bind('tweets');
 db.bind('weights');
-db.weights.drop(function(){});
+db.bind('sitesraw');
+
+//db.sitesraw.drop(function(){});
+
+var col_sites;
+var bulk;
+// get collections for users
+db.collection('sitesraw',function(err,collection) {
+	col_sites = collection;
+	//col_sites.ensureIndex({id:1},function(){});
+	bulk = col_sites.initializeUnorderedBulkOp();
+});
 
 // update the users weight
 function computeUserWeight(user){
@@ -123,7 +134,7 @@ function computeUserUrlWeight(user){
 					}
 				}
 			}
-		} 
+		}
 	}
 
 	return result;
@@ -157,10 +168,52 @@ process.on('message',function(object){
 
 			var user_weight = computeUserWeight(db_user);
 			var tweet_weight = computeTweetWeight(db_user,tweet);
-			var user_url_weight = computeUserUrlWeight(db_user);
+
+			var t_weight = 0.6 * user_weight + 0.4 * tweet_weight;
 
 			var update = {};
+
+			// rethink structure
+			update['$set'] = {
+				't_weight':t_weight,
+				'lang': tweet.lang
+			};
+
+			var inserted = 0;
+
+			var urls = [];
+
+			if(!isEmpty(db_user.url)){
+				var keywords = split(db_user.description,' ');
+				update['$set'].keywords = keywords;
+				bulk.find({'user_id':db_user.id,'url':db_user.url}).upsert().update(update);
+				inserted++;
+			}
+
+			if(tweet.entities.urls.length > 0){
+				for(var i=0; i<tweet.entities.urls.length; i++){
+					urls.push(tweet.entities.urls[i].expanded_url);
+				}
+			}
+
+			for(var i=0; i<urls.length; i++){
+				bulk.find({'tweet_id':tweet.id,'user_id':db_user.id,'url':urls[i]}).upsert().update(update);
+			}
+
+			urls.length += inserted;
 			
+			// process urls
+			if(inserted > 0){
+				bulk.execute(function(err,result) {
+					bulk = col_sites.initializeUnorderedBulkOp(); // reset after execute
+		        	if(err){ console.log(err); }
+			        next();
+		        });
+			} else {
+				next();
+			}
+
+			/*
 			update['$set'] = {
 				'followers_count': 	db_user.followers_count,
 				'favourites_count': db_user.favourites_count,
@@ -216,7 +269,9 @@ process.on('message',function(object){
 				// crete update statement
 				update['$addToSet']['media_urls'] = { '$each' : tmp_arr };
 			}
+			*/
 
+			/*
 			db.weights.update({'tweet_id':tweet.id,'user_id':db_user.id},update,{upsert:true},function(err){
 				if(err){
 					console.log('failed to update weight... tweet:' + tweet.id + ' user:' + user.id);
@@ -224,6 +279,7 @@ process.on('message',function(object){
 
 				next();
 			});
+			*/
 			
 		})
 	}
