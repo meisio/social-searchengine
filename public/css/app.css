@@ -1,0 +1,46 @@
+body{
+	background-color: #fafafa;
+}
+
+.top{
+	background-color: #ee6e73;
+}
+
+.search-input-group input{
+	color: #fff;
+	border-bottom: 2px solid #fff !important;
+	box-shadow: 0px 0px 0px 0px !important;
+}
+
+.search-input-group .active{
+	color: #fff !important;
+}
+
+.search-input-group label{
+	color: #fff;
+}
+
+.search-button a{
+	background-color: #fff !important;
+}
+
+.search-button a i{
+	color: #000;
+}
+
+.resultlist li{
+	border-bottom: 1px solid #dadada;
+}
+
+.result-title{
+	font-size: 1.0em;
+}
+
+.result-url{
+	color: green;
+}
+
+.result-description{
+	padding: 10px 0px 10px 0px;
+	overflow-x: hidden;
+}

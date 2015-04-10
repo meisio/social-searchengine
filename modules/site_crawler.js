@@ -12,6 +12,11 @@ var db = mongo.db(settings.getMongoHost(), {native_parser: true});
 db.bind('sitesraw');
 db.bind('sites');
 
+// 
+var natural   = require('natural');
+var tokenizer = new natural.WordTokenizer();
+var Trie 	  = natural.Trie;
+
 //db.sites.drop(function(){});
 
 process.on('message',function(object){
@@ -36,25 +41,51 @@ process.on('message',function(object){
 		// min time diff to update
 		if( ( now - site.timestamp ) > _MS_PER_MIN ){
 			getSiteInfo(site.url,function(err,siteinfo){
-				console.log(siteinfo);
+				//console.log(siteinfo);
+				
 				if(siteinfo){
 					var update = {};
+
 					update['$set'] = {
 						lang: site.lang
 					};
+
 					for(var k in siteinfo){
 						update['$set'][k] = siteinfo[k];
 					}
 
 					// collect keywords
 					var keywords = {};
-					var udesc_keywords 	= site.keywords;
+					
+
+					var udesc_keywords 	= tokenizer.tokenize(siteinfo.description);
+					var title_keywords 	= tokenizer.tokenize(siteinfo.title);
+					var meta_keywords 	= tokenizer.tokenize(siteinfo.sitekeywords);
+					var host_keywords 	= tokenizer.tokenize(siteinfo.host);
+
+					/*
+					var udesc_keywords 	= splitAndClean(siteinfo.description,' ');
 					var title_keywords 	= splitAndClean(siteinfo.title,' ');
-					var meta_keywords 	= splitAndClean(siteinfo.keywords,',');
+					var meta_keywords 	= splitAndClean(siteinfo.sitekeywords,',');
 					var host_keywords 	= splitAndClean(siteinfo.host,'.');
+					*/
+
+					/*
+					var trie = new Trie();
+					trie.addStrings(site.description_keywords);
+					var counter = 0;
+					for(var i=0; i<site.tweet_keywords.length; i++){
+						if(trie.contains(site.tweet_keywords[i])){
+							counter++;
+						}
+					}
+					var desc_tweet_match = counter / (site.description_keywords.length + site.tweet_keywords.length);
+					*/
 
 					// 1. create set
-					addToSet(keywords,udesc_keywords,'udesc');
+					addToSet(keywords,site.description_keywords,'desc');
+					addToSet(keywords,site.tweet_keywords,'desc');
+					addToSet(keywords,udesc_keywords,'desc');
 					addToSet(keywords,title_keywords,'title');
 					addToSet(keywords,meta_keywords,'meta');
 					addToSet(keywords,host_keywords,'host');
@@ -73,8 +104,8 @@ process.on('message',function(object){
 						keywords[keyword].k = keyword;
 						keywords[keyword].tw = site.t_weight;
 						keywords[keyword].sw = 
-							        url_distance_weight
-							+ 0.2 * title_distance_weight
+							  0.7  * url_distance_weight
+							+ 0.2  * title_distance_weight
 							+ 0.01 * desc_distance_weight
 							+ 0.09 * doc_distance_weight;
 
@@ -126,7 +157,7 @@ function dateDiffInDays(a, b) {
 }
 
 
-var MAX_HTML_LENGTH = 200;
+var MAX_HTML_LENGTH = 65536;
 
 function clean(str){
 	if(str !== null && str !== undefined){
@@ -154,7 +185,7 @@ function clean(str){
 	}
 }
 function isEmpty(e){
-	return (e === undefined || e === null || (typeof(e) === "string" && e.length == 0));
+	return (e === undefined || e === null || (typeof(e) === "string" && e.length == 0) || e.length == 0);
 }
 function getSiteInfo(shortUrl,callback) {
     request({ url: shortUrl, followAllRedirects: true },
@@ -177,22 +208,31 @@ function getSiteInfo(shortUrl,callback) {
 
    				
 				site = {
-					title: title,
-					description: description,
-					keywords: keywords,
+					title: title !== undefined ? title.toLowerCase() : title,
+					description: description !== undefined ? description.toLowerCase() : description,
+					sitekeywords: keywords !== undefined ? keywords.toLowerCase() : keywords,
 					url: response.request.href,
 					favicon: favicon,
 					html: $('html').html(),//clean($('body').html()),
 					host: response.request.host,
 					timestamp: new Date()
 				};
-			
+
+				if(isEmpty(site.title)) site.title = '';
+				if(isEmpty(site.description)) site.description = '';
+				if(isEmpty(site.sitekeywords)) site.sitekeywords = '';
+				if(isEmpty(site.html)) site.html = '';
+				if(isEmpty(site.title)) site.title = '';
+				if(isEmpty(site.favicon)) site.favicon = '';
+
+				/*
 				if(isEmpty(site.title)) delete site.title;
 				if(isEmpty(site.description)) delete site.description;
-				if(isEmpty(site.keywords)) delete site.keywords;
+				if(isEmpty(site.sitekeywords)) delete site.sitekeywords;
 				if(isEmpty(site.html)) delete site.html;
 				if(isEmpty(site.title)) delete site.title;
 				if(isEmpty(site.favicon)) delete site.favicon;
+				*/
 	        }
 	        if(callback!==undefined){
 	        	callback(error,site);
@@ -234,9 +274,9 @@ function clean_url(str){
 
 function clean_word(str){
 	var str =  clean_url(str);
-	return str.replace(/[()?:!.,;{}\"\[\]]+/g,"");
+	//return str.replace(/[()?:!.,;{}\"\[\]]+/g,"");
 	//return str.replace(/^°!\"§$%&\/()=?`*'#+´-.,_:;<>“/gi,"");
-	return str.replace(/[^[~0-9a-z`´ _"]{2,}|(\w[']\w*)]/gi,"").replace("\"","").replace("“","").replace(".","");
+	return str.replace(/[^[~0-9a-z`´ _"]{2,}|(\w[']\w*)]/gi,"").replace("\"","").replace("“","").replace(".","").replace("'","");
 }
 
 //
@@ -281,27 +321,32 @@ function addToSet(set,arr,type){
 	if(isEmpty(arr)){
 		return;
 	}
+
+	// console.log(arr);
+
 	for(var i=0; i<arr.length; i++){
 		var obj = arr[i];
-		var splitted = splitAndClean(obj,' ');
-		if(splitted.length>1){
-			addToSet(set,splitted);
-		} else {
-			if(!isEmpty(obj) && obj.length>1){
-				var cleaned = clean_word(obj);
-				if(!set[cleaned]){
-					set[cleaned] = {
-						k: cleaned,
-						type: type
-					};
-				} else if( set[cleaned].type !== type ){
-					set[cleaned] = {
-						k: cleaned,
-						type: ''
-					};
-				}
+		
+		if(!isEmpty(obj) && obj.length>1){
+			var cleaned = clean_word(obj);
+			
+			if(!set[cleaned]){
+				set[cleaned] = {
+					k: cleaned,
+					type: type,
+					count: 0
+				};
 			}
+
+			set[cleaned].count++;
+
+			if( set[cleaned].type !== type ){
+				set[cleaned].type = 'multi';
+			}
+
+
 		}
+		
 	}
 	
 }

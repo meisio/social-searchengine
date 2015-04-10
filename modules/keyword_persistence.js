@@ -9,7 +9,7 @@ var db = mongo.db(settings.getMongoHost(), {native_parser: true});
 db.bind('sites');
 db.bind('words');
 
-db.words.drop(function(){});
+//db.words.drop(function(){});
 
 var iter = 0;
 
@@ -24,7 +24,6 @@ process.on('message',function(msg){
 	}
 	
 	function handleNext(err,site){
-		
 
 		if(err || site === null){
 			if(err){
@@ -51,10 +50,12 @@ process.on('message',function(msg){
 							url: site.url,
 							title: site.title,
 							description: site.description,
+							favicon: site.favicon,
 							html: txt,
 							tw: site.keywords[i].tw,
 							sw: site.keywords[i].sw,
-							weight: site.keywords[i].tw * site.keywords[i].sw
+							weight: site.keywords[i].tw * site.keywords[i].sw,
+							count: site.keywords[i].count
 						};
 						
 						if(!word){
@@ -82,6 +83,8 @@ process.on('message',function(msg){
 
 							var contains = false;
 							var word_sites = {};
+							var w_cnt = 0;
+
 							for(var j=0; j<word.sites.length; j++){
 								word_sites[word.sites[j].url] = {};
 								if(site_entry.url === word.sites[j].url){
@@ -101,6 +104,8 @@ process.on('message',function(msg){
 								if(s_weight_min > word.sites[j].sw){
 									s_weight_min = word.sites[j].sw;
 								}
+
+								w_cnt += word.sites[j].count;
 							}
 
 							if(!contains){
@@ -110,10 +115,11 @@ process.on('message',function(msg){
 
 							// normalize weights
 							var w_sum = 0.0;
+
 							for(var j=0; j<word.sites.length; j++){
 								var tw = (word.sites[j].tw - 0.0) / (t_weight_max - t_weight_min + 1.0);
 								var sw = (word.sites[j].sw - 0.0) / (s_weight_max - s_weight_min + 1.0);
-								word.sites[j].weight = tw * sw;
+								word.sites[j].weight = (tw * sw) + 0.2 * (word.sites[j].count / w_cnt);
 								w_sum += word.sites[j].weight;
 							}
 

@@ -20,7 +20,7 @@ var stream = T.stream('statuses/filter',{
 	// twitter does not send the main tweet if we listen only to the location such as
 	// locations: '-180,-90,180,90'
 	// so let listen us to 'retweets', we recieves also the original tweets
-	track: ['RT']
+	track: ['http']
 });
 
 // split twitter data

@@ -12,6 +12,7 @@
     "gridfs-stream": "^1.0.1",
     "htmlparser2": "^3.8.2",
     "mongoskin": "~1.4.4",
+    "natural": "^0.2.1",
     "request": "^2.53.0",
     "twit": "~1.1.20"
   },

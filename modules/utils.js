@@ -28,6 +28,7 @@ function getTextSurrounding(word,txt,max){
 		var res = "";
 
 		res+="...";
+		
 		if(idx - 10 > 0 ){
 			idx = idx - 10;
 		}

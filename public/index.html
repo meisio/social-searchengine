@@ -1,0 +1,56 @@
+<html>
+  <head>
+    <!--Import materialize.css-->
+    <link type="text/css" rel="stylesheet" href="bower_components/materialize/dist/css/materialize.min.css"  media="screen,projection"/>
+    <link type="text/css" rel="stylesheet" href="css/app.css"  media="screen,projection"/>
+
+    <!--Let browser know website is optimized for mobile-->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  </head>
+
+  <body>
+    <nav class="top-nav">
+      <div class="container">
+        <a href="#" class="brand-logo"></a>
+        <ul id="nav-mobile" class="right hide-on-med-and-down">
+        </ul>
+      </div>
+    </nav>
+
+    <div class="top row">
+      <div class="container">
+          <div class="row">
+            <div class="search-input-group input-field col s7">
+              <input id="search" type="text" class="validate">
+              <label for="search">Search</label>
+            </div>
+            <div class="search-button input-field col s1">
+              <a id="search_button" class="btn-floating btn-medium waves-effect waves-light red"><i class="mdi-action-search"></i></a>
+            </div>
+          </div>
+      </div>
+    </div>
+
+    <div class="container">
+      <div class="row">
+        <div class="col s7">
+          <div class="card-panel">
+            <ul class="resultlist" id="search_results"></ul>
+          </div>
+        </div>
+        <div class="col s5">
+          <div class="card-panel" id="search_results">
+            <span class="blue-text text-darken-2">This is a card panel with dark blue text</span>
+          </div>
+        </div>
+      </div>
+    </div>
+   
+
+    <!--Import jQuery before materialize.js-->
+    <script type="text/javascript" src="bower_components/jquery/dist/jquery.min.js"></script>
+    <script type="text/javascript" src="bower_components/mustache/mustache.min.js"></script>
+    <script type="text/javascript" src="bower_components/materialize/dist/js/materialize.min.js"></script>
+    <script type="text/javascript" src="js/app.js"></script>
+  </body>
+</html>

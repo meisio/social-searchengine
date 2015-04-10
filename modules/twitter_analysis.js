@@ -4,7 +4,6 @@
  *	values: keywords, weights
  */
 
-
 // third party modules
 var mongo 	= require('mongoskin');
 
@@ -29,6 +28,10 @@ db.collection('sitesraw',function(err,collection) {
 	bulk = col_sites.initializeUnorderedBulkOp();
 });
 
+var natural   = require('natural');
+var Trie = natural.Trie;
+var tokenizer = new natural.WordTokenizer();
+
 // update the users weight
 function computeUserWeight(user){
 	var oldWeight = user.weight;
@@ -45,9 +48,9 @@ function computeUserWeight(user){
 	// TODO: Normalization
 	user.weight = 
 		  1.0 - ( 1.0 / (a / b))	// followers / friends ratio
-		+ 0.5 - ( 0.5 / c )			// log of listed count
-		+ 0.1 - ( 0.1 / d )				// log of fav count
-	//console.log(user);
+		+ 0.1 - ( 0.1 / c )			// log of listed count
+		+ 0.1 - ( 0.1 / d )			// log of fav count
+
 	// avg. weight
 	user.weight = ( user.weight + oldWeight ) * 0.5;
 	
@@ -89,6 +92,21 @@ function split(str,delim){
 	}
 }
 
+function cleanAndSplit(str,delim){
+	var str_cleaned = cleanAll(str);
+	return split(str,delim);
+}
+
+function getKeywordsOnly(arr){
+	var res = [];
+	for(var i=0; i<arr.length; i++){
+		if(!isURL(arr[i]) && arr[i].length > 1){
+			res.push(arr[i]);
+		}
+	}
+	return res;
+}
+
 function clean(str){
 	if(!isEmpty(str)){
 		var str = str.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,"");
@@ -102,11 +120,11 @@ function clean(str){
 	}
 }
 
-function clean_all(str){
+function cleanAll(str){
 	var str =  clean(str);
 	//return str.replace(/[()?:-_!.,;{}\"]+/g,"");
 	//return str.replace(/^°!\"§$%&\/()=?`*'#+´-.,_:;<>“/gi,"");
-	return str.replace(/[^[~0-9a-z`´ _"]{2,}|(\w[']\w*)]/gi,"").replace("\"","").replace("“","");
+	return str.replace(/[^[~0-9a-z`´ _"]{2,}|(\w[']\w*)]/gi,"").replace("\"","").replace("“","").replace("|","").replace("!","");
 }
 
 //
@@ -122,7 +140,7 @@ function computeUserUrlWeight(user){
 			var words = split(user.description,' ');
 			for(var i=0; i<words.length; i++){
 				var word = words[i].toLowerCase().trim();
-				word = clean_all(word);
+				word = cleanAll(word);
 				if(word.length > 1){
 					var idx = user.url.indexOf(word);
 					if( idx !== -1 ){
@@ -140,6 +158,22 @@ function computeUserUrlWeight(user){
 	return result;
 }
 
+var url_pattern = new RegExp("(http|ftp|https)://[\w-]+(\.[\w-]+)+([\w.,@?^=%&amp;:/~+#-]*[\w@?^=%&amp;/~+#-])?")
+
+function isURL(str){
+	return str.match(url_pattern);
+}
+
+function removeURLs(str){
+	if(str === undefined || str === null) return '';
+	return str.replace(/((?:(http|https|Http|Https|rtsp|Rtsp):\/\/(?:(?:[a-zA-Z0-9\$\-\_\.\+\!\*\'\(\)\,\;\?\&\=]|(?:\%[a-fA-F0-9]{2})){1,64}(?:\:(?:[a-zA-Z0-9\$\-\_\.\+\!\*\'\(\)\,\;\?\&\=]|(?:\%[a-fA-F0-9]{2})){1,25})?\@)?)?((?:(?:[a-zA-Z0-9][a-zA-Z0-9\-]{0,64}\.)+(?:(?:aero|arpa|asia|a[cdefgilmnoqrstuwxz])|(?:biz|b[abdefghijmnorstvwyz])|(?:cat|com|coop|c[acdfghiklmnoruvxyz])|d[ejkmoz]|(?:edu|e[cegrstu])|f[ijkmor]|(?:gov|g[abdefghilmnpqrstuwy])|h[kmnrtu]|(?:info|int|i[delmnoqrst])|(?:jobs|j[emop])|k[eghimnrwyz]|l[abcikrstuvy]|(?:mil|mobi|museum|m[acdghklmnopqrstuvwxyz])|(?:name|net|n[acefgilopruz])|(?:org|om)|(?:pro|p[aefghklmnrstwy])|qa|r[eouw]|s[abcdeghijklmnortuvyz]|(?:tel|travel|t[cdfghjklmnoprtvwz])|u[agkmsyz]|v[aceginu]|w[fs]|y[etu]|z[amw]))|(?:(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[1-9])\.(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[1-9]|0)\.(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[1-9]|0)\.(?:25[0-5]|2[0-4][0-9]|[0-1][0-9]{2}|[1-9][0-9]|[0-9])))(?:\:\d{1,5})?)(\/(?:(?:[a-zA-Z0-9\;\/\?\:\@\&\=\#\~\-\.\+\!\*\'\(\)\,\_])|(?:\%[a-fA-F0-9]{2}))*)?(?:\b|$)/gi, '');
+}
+
+function removeMails(str){
+	if(str === undefined || str === null) return '';
+	return str.replace(/[a-zA-Z0-9\\+\\.\\_\\%\\-]{1,256}\\@[a-zA-Z0-9][a-zA-Z0-9\\-]{0,64}(\\.[a-zA-Z0-9][a-zA-Z0-9\\-]{0,25})+/gi, '');
+}
+
 process.on('message',function(object){
 	// iterate over db and calc weights
 	// get cursor to the first object
@@ -147,6 +181,38 @@ process.on('message',function(object){
 
 	function next(){
 		cursor.nextObject(handleNext);
+	}
+
+	function processNext(err,tweet){
+		if(err ||tweet === null){
+			return process.send('finish');
+		}
+
+		// at this part we filter out those tweets without urls or media urls
+		if(		tweet.entities.urls.length === 0 
+			|| (tweet.extended_entities === undefined || tweet.extended_entities === null) 
+			|| (tweet.extended_entities.media.length === 0)){
+			return next();
+		}
+
+		db.users.findOne({'id':tweet.user},function(err,db_user){
+			if(err || db_user === null){
+				return next();
+			}
+			if(db_user.description !== undefined){
+				// clean up
+				var description = removeURLs(db_user.description);
+					description = removeMails(description);
+				var tweet_text 	= removeURLs(tweet.text);
+					tweet_text 	= removeMails(tweet_text);
+				console.log(db_user.description);
+				console.log(tokenizer.tokenize(description));
+				console.log(tweet.text);
+				console.log(tokenizer.tokenize(tweet_text));
+				console.log("===============================\n");
+			}
+			next();
+		});
 	}
 
 	function handleNext(err,tweet){
@@ -170,11 +236,31 @@ process.on('message',function(object){
 			var tweet_weight = computeTweetWeight(db_user,tweet);
 
 			var t_weight = 0.6 * user_weight + 0.4 * tweet_weight;
-
+			
 			var update = {};
+
+			var trie = new Trie();
+
+			// clean up
+			var description 		 = removeURLs(db_user.description);
+				description 		 = removeMails(description);
+			var description_keywords = tokenizer.tokenize(description);
+			var tweet_text 		= removeURLs(tweet.text);
+				tweet_text 		= removeMails(tweet_text);
+			var tweet_keywords  = tokenizer.tokenize(tweet_text);
+
+			if(!true){
+				console.log(db_user.description);
+				console.log(tokenizer.tokenize(description));
+				console.log(tweet.text);
+				console.log(tokenizer.tokenize(tweet_text));
+				console.log("===============================\n");
+			}
 
 			// rethink structure
 			update['$set'] = {
+				'description_keywords': description_keywords,
+				'tweet_keywords': tweet_keywords,
 				't_weight':t_weight,
 				'lang': tweet.lang
 			};
@@ -184,8 +270,6 @@ process.on('message',function(object){
 			var urls = [];
 
 			if(!isEmpty(db_user.url)){
-				var keywords = split(db_user.description,' ');
-				update['$set'].keywords = keywords;
 				bulk.find({'user_id':db_user.id,'url':db_user.url}).upsert().update(update);
 				inserted++;
 			}
@@ -200,10 +284,10 @@ process.on('message',function(object){
 				bulk.find({'tweet_id':tweet.id,'user_id':db_user.id,'url':urls[i]}).upsert().update(update);
 			}
 
-			urls.length += inserted;
+			inserted += urls.length;
 			
 			// process urls
-			if(inserted > 0){
+			if(inserted > 0){	
 				bulk.execute(function(err,result) {
 					bulk = col_sites.initializeUnorderedBulkOp(); // reset after execute
 		        	if(err){ console.log(err); }
